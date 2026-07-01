@@ -1,21 +1,29 @@
-import requests
+import paho.mqtt.client as mqtt
+import json
 import time
 import random
 
-API_URL = "http://localhost:8000/lecturas/"
+# CONFIGURACIÓN MQTT 
+BROKER = "broker.hivemq.com"
+PORT = 1883
 
 ESTACIONES_IDS = [1, 2, 3, 4]
 
-# PEGA AQUÍ TU TOKEN JWT
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc4MTEwNTgzOH0.WI3_aeuW0Sj9HkirCEO2blLCvo2QTZ3MQXkzBYnemhQ"
-
 def leer_sensor_emulado():
-    
     return round(random.uniform(10.0, 85.0), 2)
 
 def enviar_telemetria():
-    print("--- Iniciando Emisor IoT Multi-Estación ---")
+    print("--- Iniciando Emisor IoT Multi-Estación (Vía MQTT) ---")
+    print(f"Conectando al Broker: {BROKER}")
     print(f"Monitoreando estaciones con IDs: {ESTACIONES_IDS}\n")
+
+    # Inicializar el cliente MQTT local
+    client = mqtt.Client()
+    try:
+        client.connect(BROKER, PORT)
+    except Exception as e:
+        print(f"[CRÍTICO] No se pudo conectar al Broker MQTT: {e}")
+        return
 
     while True:
         hay_alerta_global = False
@@ -25,33 +33,23 @@ def enviar_telemetria():
 
             payload = {
                 "valor": valor,
-                "estacion_id": estacion_id
+                "timestamp": time.time()
             }
 
-            headers = {
-                "Authorization": f"Bearer {TOKEN}"
-            }
+            topic = f"fisi/smat/estaciones/{estacion_id}"
 
             try:
-                response = requests.post(
-                    API_URL,
-                    json=payload,
-                    headers=headers
-                )
 
-                if response.ok:
-                    if valor > 70:
-                        print(f"[ALERTA] Estación ID {estacion_id} -> ¡CRÍTICO! {valor} cm (Umbral superado)")
-                        hay_alerta_global = True
-                    else:
-                        print(f"[OK] Estación ID {estacion_id} -> {valor} cm (Nivel normal)")
-
+                client.publish(topic, json.dumps(payload))
+                
+                if valor > 70:
+                    print(f"[ALERTA] Publicado en MQTT -> Estación ID {estacion_id}: ¡CRÍTICO! {valor} cm")
+                    hay_alerta_global = True
                 else:
-                    print(f"[ERROR] Estación ID {estacion_id} -> Código HTTP: {response.status_code}")
-                    print(response.text)
+                    print(f"[OK] Publicado en MQTT -> Estación ID {estacion_id}: {valor} cm")
 
             except Exception as e:
-                print(f"[CRÍTICO] Estación ID {estacion_id} -> Sin conexión con el servidor: {e}")
+                print(f"[ERROR] Falló el envío MQTT para la estación {estacion_id}: {e}")
 
         print("-" * 50)
 
